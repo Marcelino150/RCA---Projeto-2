@@ -17,7 +17,7 @@
 #include <pthread.h>
 
 #define TAM_BLC 65536
-#define PASTA "Armazenamento de "
+#define PASTA "Armazenamento de"
 #define h_addr h_addr_list[0]
 
 typedef struct contato Contato;
@@ -28,6 +28,7 @@ typedef struct msgnvizualiada MsgNVizualiada;
 typedef struct infoRede InfoRede;
 typedef struct parametro Parametro;
 typedef struct minhaInfo MinhaInfo;
+typedef struct contatoAgenda ContatoAgenda;
 
 struct infoRede{
     char ip[32];
@@ -42,26 +43,29 @@ struct contato{
     Contato *prox;
 };
 
+struct contatoAgenda{
+    char nome[32];
+    char numero[20];
+};
+
 struct grupo{
     char nome[32];
     Contato *participantes;
-
     Grupo *prox;
 };
 
 struct msgnvizualiada{
     char msg[128];
-
     MsgNVizualiada *prox;
 };
 
 struct infoArq{
     int tamanho;
     char nomeArq[128];
+    char numRemetente[20];
 };
 
 struct mensagem{
-    char chat[20];
     char msg[128];
     char numRemetente[20];
 };
@@ -76,39 +80,49 @@ struct minhaInfo{
     int porta;
 };
 
-int adicionaContato(Contato **listaDeContatos);
-void criaGrupo(Grupo **grupos);
-Contato *listaContatos(Contato *listaDeContatos);
-Grupo *listaGrupos(Grupo *grupos);
-void acessaConversa(char nomeConversa[], Contato *participantes, int tipoConversa);
-void acessaGrupo(Grupo *grupo, Contato *participantes);
-int adicionaAoGrupo(Contato **participantes, Contato *listaDeContatos);
-Contato *buscaContato(Contato *contato, int indice);
-Grupo *buscaGrupo(Grupo *grupo, int indice);
-int exibeContatos(Contato *listaDeContatos, int tipoExibicao);
-int exibeGrupos(Grupo *grupos);
-Contato *buscaContatoPorNumero(Contato *listaDeContatos, char numero[]);
-void *threadReceptora(void *parametros);
-int contaNaoVizualizadas(MsgNVizualiada *listaMsgs);
-void exibeNaoVizualizadas(MsgNVizualiada *listaMsgs);
-void adicionaNaoVizualizada(char msg[], MsgNVizualiada **listaMsgs);
-void limpaNaoVizualizadas(MsgNVizualiada **listaMsgs);
-int criarSocket(int *porta, int *namelen);
-int criarSocketServidor(char *ip, char *porta);
-void encerraCliente();
-void fechaConexoes();
-void *esperaUsuarios();
+int criarSocketServidor(char *ip, char *porta); // Cria socket para se comunicar com o servidor
+void *esperaUsuarios(); // Aguarda conexõesde outros usuários
+void *threadReceptora(void *parametros); // Recebe mensagens/arquivos de usuários
+void fechaConexoes(); // Fecha todos os sockets
+void ficarOffline(); // Muda o status no servidor para "offline"
+void encerraCliente(); // Fecha todas as conexões e fica offline no servidor
 
-pthread_mutex_t locker;
-char chatAtual[20] = "";
+int adicionaContato(Contato **listaDeContatos); // Menu de adição de contato
+int procuraDuplicata(Contato *listaDeContatos, char numero[]); // Verifica se o número a ser cadastrado já existe na lista de contatos
+int adicionaNaLista(Contato **listaDeContatos, char nome[], char numero[]); // Adição de contato na lista-ligada
+int exibeContatos(Contato *listaDeContatos, int tipoExibicao); // Exibe todos os contatos contidos em "listaDeContatos"
+void acessaConversa(char nomeConversa[], Contato *participantes, int tipoConversa); // Entra no chat de conversa
+Contato *listaContatos(Contato *listaDeContatos); // Exibe todos os contatos contidos em "listaDeContatos" e aguarda o usuário escolher um
+Contato *buscaContato(Contato *contato, int indice); // Busca um contato pelo indice na lista-ligada
+Contato *buscaContatoPorNumero(Contato *listaDeContatos, char numero[]); // Busca contato pelo numero do contato
+
+void adicionaNaoVizualizada(char msg[], MsgNVizualiada **listaMsgs); // Quando o usuário não estiver no chat referente a mensagem recebida, armazena a mensagem em uma lista-ligada
+void exibeNaoVizualizadas(MsgNVizualiada *listaMsgs); // Exibe as mensagens não lidas armazenadas
+void limpaNaoVizualizadas(MsgNVizualiada **listaMsgs); // Libera a memória alocada para mensagens não visualizadas
+int contaNaoVizualizadas(MsgNVizualiada *listaMsgs); // Conta a quantiade de mensagens não visualizadas
+
+void criaGrupo(Grupo **grupos); // Cria um novo grupo
+void acessaGrupo(Grupo *grupo, Contato *listaDeContatos); // Acessa um grupo criado
+int exibeGrupos(Grupo *grupos); // Exibe todos os grupos criados
+int adicionaAoGrupo(Contato **participantes, Contato *listaDeContatos); // Exibe todos os contatos contidos em "listaDeContatos", aguarda que o usuário escolha um, e adiciona o escolhido ao grupo
+Grupo *listaGrupos(Grupo *grupos); // Exibe todos os grupos criados e aguarda o usuário escolher um
+Grupo *buscaGrupo(Grupo *grupo, int indice); // Busca um grupo pelo indice na lista-ligada
+
+void gravaArquivo(char nome[], char numero[]); // Adiciona os dados de um contato no fim do arquivo "Agenda"
+void leArquivo(); // Lê o arquivo "Agenda" adicionando os contatos lidos a lista ligada do programa
+
 struct sockaddr_in server;
+pthread_mutex_t locker;
 MinhaInfo info;
-int namelen;
+Contato *contatos = NULL;
+
 char nomeServidor[20];
 char portaServidor[20];
-int *socketEmissor = NULL;
+char chatAtual[20] = "";
+int namelen;
+int *socketEmissor;
+int socketReceptor;
 int nParticipantes = 1;
-Contato *contatos = NULL;
 
 int main(int argc, char **argv){
 
@@ -120,7 +134,6 @@ int main(int argc, char **argv){
     pthread_t thread;
     int opServidor;
     int s;
-    int ret;
 
     if(argc != 3){
         fprintf(stderr, "Use: %s hostname porta\n", argv[0]);
@@ -136,13 +149,16 @@ int main(int argc, char **argv){
     fgets(info.meuNumero, sizeof(info.meuNumero), stdin);
     info.meuNumero[strlen(info.meuNumero)-1] = '\0';
 
+    leArquivo();
+    socketEmissor = NULL;
+
     strcpy(nomeServidor, argv[1]);
     strcpy(portaServidor, argv[2]);
 
     s = criarSocketServidor(nomeServidor, portaServidor);
     if(connect(s, (struct sockaddr *)&server, sizeof(server)) < 0){
         perror("connect()");
-        return 0;
+        exit(0);
     };
 
     td = pthread_create(&thread, NULL, &esperaUsuarios, NULL);
@@ -151,12 +167,12 @@ int main(int argc, char **argv){
     opServidor = 0;
     if (send(s, &opServidor, sizeof(opServidor), 0) <= 0){
         perror("send()");
-        return 0;
+        exit(0);
     }
 
     if (send(s, &info, sizeof(info), 0) <= 0){
         perror("send()");
-        return 0;
+        exit(0);
     }
 
     pthread_mutex_unlock(&locker);
@@ -172,15 +188,18 @@ int main(int argc, char **argv){
         printf("[4] Grupos\n");
         printf("[5] Sair\n");
         printf("\n>> ");
+        __fpurge(stdin);
         scanf("%d", &op);
 
         switch(op){
-        
+
             case 1:
                 system("clear");
-                ret = adicionaContato(&contatos);
-                if(ret == 1){
+                if(adicionaContato(&contatos)){
                     printf("\nContato adicionado com sucesso! Pressione Enter para continuar...");
+                }
+                else{
+                    printf("\nJa existe um contato com este numero! Pressione Enter para continuar...");
                 }
                 __fpurge(stdin);
                 getchar();
@@ -199,7 +218,6 @@ int main(int argc, char **argv){
                 if((retContato = listaContatos(contatos))){         
                     acessaConversa(retContato->nome,retContato, 1);
                 };
-
                 break;
             
             case 4:
@@ -208,11 +226,13 @@ int main(int argc, char **argv){
                     acessaGrupo(retGrupo,contatos);
                 }
                 break;
-
         }
 
         system("clear");
     }while(op != 5);
+
+    encerraCliente();
+    exit(1);
 }
 
 InfoRede buscaEndereco(char *numero){
@@ -234,11 +254,34 @@ InfoRede buscaEndereco(char *numero){
     };
 
     if (recv(s, &rede, sizeof(rede), 0) <= 0){
-        perror("send()");
+        perror("recv()");
     }
     close(s);
 
     return rede;
+}
+
+int adicionaNaLista(Contato **listaDeContatos, char nome[], char numero[]){
+
+    if(procuraDuplicata(*listaDeContatos, numero)){
+        while(*listaDeContatos != NULL && strcmp((*listaDeContatos)->nome, nome) < 0){
+            listaDeContatos = &(*listaDeContatos)->prox;
+        }
+    }
+    else{
+        return 0;
+    }
+
+    Contato *aux;
+    aux = (Contato*)malloc(sizeof(Contato));
+    strcpy(aux->nome, nome);
+    strcpy(aux->numero, numero);
+    aux->listaMsgs = NULL;
+    aux->prox = *listaDeContatos;
+
+    *listaDeContatos = aux;
+
+    return 1;
 }
 
 int adicionaContato(Contato **listaDeContatos){
@@ -258,19 +301,23 @@ int adicionaContato(Contato **listaDeContatos){
     fgets(numero, sizeof(numero), stdin);
     numero[strlen(numero)-1] = '\0';
 
-    while(*listaDeContatos != NULL && strcmp((*listaDeContatos)->nome, nome) < 0){
-        listaDeContatos = &(*listaDeContatos)->prox;
+    if(adicionaNaLista(listaDeContatos, nome, numero)){
+        gravaArquivo(nome, numero);
+        return 1;
     }
 
-    Contato *aux;
-    aux = (Contato*)malloc(sizeof(Contato));
-    strcpy(aux->nome, nome);
-    strcpy(aux->numero, numero);
-    aux->listaMsgs = NULL;
-    aux->prox = *listaDeContatos;
+    return 0;
+}
 
-    *listaDeContatos = aux;
+int procuraDuplicata(Contato *listaDeContatos, char numero[]){
+    
+    while(listaDeContatos != NULL){
+        if(strcmp(listaDeContatos->numero, numero) == 0){
+            return 0;
+        }
 
+        listaDeContatos = listaDeContatos->prox;
+    }
     return 1;
 }
 
@@ -350,7 +397,7 @@ void print(char msg[]){
 
 void *threadReceptora(void *parametros){
 
-    char caminho[128], numero[30], toPrint[256];
+    char caminho[128], paraExibir[256], caminhoArquivo[256];
     int bRecebidos = 0, op;
     FILE *arquivo;
     InfoArq infoArquivo;
@@ -358,42 +405,31 @@ void *threadReceptora(void *parametros){
     void *bloco;
     Contato *remetente;
     struct sockaddr_in client = ((Parametro*)parametros)-> cliente;
-    int socketReceptor = ((Parametro*)parametros)-> socketReceptor;
+    socketReceptor = ((Parametro*)parametros)-> socketReceptor;    
 
-    strcpy(caminho, PASTA);
-    sprintf(numero,"%s/",info.meuNumero);
-    strcat(caminho, numero);
-
-    int tam;
+    sprintf(caminho,"%s %s/", PASTA, info.meuNumero);
 
     do{
         bzero(&op, sizeof(op));
-        if (recv(socketReceptor, &op, sizeof(op), 0) <= 0){
-            return 0;
-        }
-
+        recv(socketReceptor, &op, sizeof(op), 0);
+        
         if(op == 1){
             bzero(&recebido, sizeof(recebido));
-            if ((tam = recv(socketReceptor, &recebido, sizeof(recebido), 0)) <= 0){
-                return 0;
-            }
+            recv(socketReceptor, &recebido, sizeof(recebido), 0);
 
             fflush(stdout);
             remetente = buscaContatoPorNumero(contatos, recebido.numRemetente);
+            sprintf(paraExibir,"[%s] %s",remetente->nome,recebido.msg);
             if(strcmp(chatAtual, recebido.numRemetente) == 0 && remetente != NULL){
-                sprintf(toPrint,"[%s] %s",remetente->nome,recebido.msg);
-                print(toPrint);
+                print(paraExibir);
             }
             else if(remetente != NULL){
-                sprintf(toPrint,"[%s] %s",remetente->nome,recebido.msg);
-                adicionaNaoVizualizada(toPrint, &(remetente->listaMsgs));
+                adicionaNaoVizualizada(paraExibir, &(remetente->listaMsgs));
             }
         }
         else if(op == 2){
 
-            if (recv(socketReceptor, &info, sizeof(info), 0) <= 0){
-                return 0;
-            }
+            recv(socketReceptor, &infoArquivo, sizeof(infoArquivo), 0);
 
             mkdir(caminho, S_IRWXU | S_IRWXG | S_IRWXO);
             strcat(caminho, infoArquivo.nomeArq);
@@ -401,19 +437,26 @@ void *threadReceptora(void *parametros){
             bloco = malloc(TAM_BLC);
 
             do{
-                if ((bRecebidos = recv(socketReceptor, bloco, TAM_BLC, 0)) <= 0){
-                    return 0;
-                }
-
+                bRecebidos = recv(socketReceptor, bloco, TAM_BLC, 0);
                 infoArquivo.tamanho -= bRecebidos;
 
             }while(fwrite(bloco, 1, bRecebidos, arquivo) >= 0 && infoArquivo.tamanho > 0);
 
             fclose(arquivo);
-            free(bloco);          
+            free(bloco);
+
+            fflush(stdout);
+            remetente = buscaContatoPorNumero(contatos, infoArquivo.numRemetente);
+            sprintf(paraExibir,"Voce recebeu o arquivo %s de %s.", infoArquivo.nomeArq, remetente->nome);
+            if(strcmp(chatAtual, infoArquivo.numRemetente) == 0 && remetente != NULL){
+                print(paraExibir);
+            }
+            else if(remetente != NULL){
+                adicionaNaoVizualizada(paraExibir, &(remetente->listaMsgs));
+            }
         }
 
-    }while(op != 0);
+    }while(1);
 
     pthread_exit(NULL);
 }
@@ -427,24 +470,22 @@ int conectarUsuario(InfoRede redeUsuario){
 
     hostnm = gethostbyname(redeUsuario.ip);
     if (hostnm == (struct hostent *) 0){
-        fprintf(stderr, "Gethostbyname failed\n");
-        exit(2);
+        perror("gethostbyname");
+        exit(0);
     }
 
     meuserver.sin_family      = AF_INET;
     meuserver.sin_port        = (unsigned short) htons(redeUsuario.porta);
     meuserver.sin_addr.s_addr = *((unsigned long *)hostnm->h_addr);
 
-    if ((socketE = socket(PF_INET, SOCK_STREAM, 0)) < 0)
-    {
+    if ((socketE = socket(PF_INET, SOCK_STREAM, 0)) < 0){
         perror("Socket()");
-        exit(3);
+        exit(0);
     }
 
-    if (connect(socketE, (struct sockaddr *)&meuserver, sizeof(meuserver)) < 0)
-    {
+    if (connect(socketE, (struct sockaddr *)&meuserver, sizeof(meuserver)) < 0){
         perror("Connect()");
-        exit(4);
+        exit(0);
     }
 
     return socketE;
@@ -473,6 +514,11 @@ void acessaConversa(char nomeConversa[], Contato *participantes, int tipoConvers
     int op;
     InfoRede infoRecebida;
     int tam, flag = 0;
+    int envioValido = 0;
+    int usuarioOnline = 0;
+
+    void *bloco;
+    int bLidos;
 
     if(tipoConversa == 2){
         nParticipantes = contaParticipantes(participantes);
@@ -481,11 +527,11 @@ void acessaConversa(char nomeConversa[], Contato *participantes, int tipoConvers
     socketEmissor = (int*)malloc(nParticipantes*sizeof(int));
 
     for(int i = 0; i < nParticipantes; i++){
-        fprintf(stderr,"NUMERO: %s\n", participantes->numero);
         infoRecebida = buscaEndereco(participantes->numero);
 
         if(infoRecebida.porta != 0){
             socketEmissor[i] = conectarUsuario(infoRecebida);
+            usuarioOnline = 1;
         }
         else{
             socketEmissor[i] = 0;
@@ -498,13 +544,16 @@ void acessaConversa(char nomeConversa[], Contato *participantes, int tipoConvers
 
     system("clear");
     printf("--- Conversa com %s ---\n", nomeConversa);
-    printf("/sair (Para sair da conversa)\n\n\n");
+    printf("Comandos: /sair - /enviar <nome do arquivo> - /abrir <nome do arquivo>\n\n\n");
 
     if(tipoConversa == 1){
         strcpy(chatAtual, participantes->numero);
     }
+    else{
+        strcpy(chatAtual, "");
+    }
 
-    while(1){
+    while(usuarioOnline == 1){
 
         fprintf(stderr,"> ");
         fflush(stdout);
@@ -529,9 +578,60 @@ void acessaConversa(char nomeConversa[], Contato *participantes, int tipoConvers
         
         if(strcmp(chamada, "/enviar") == 0){
 
+            nomeArquivo = strtok(NULL, ""); 
+            if((arquivo = fopen(nomeArquivo,"rb")) <= 0){
+            
+            }
+            fseek (arquivo, 0 , SEEK_END);
+            tam = ftell(arquivo);
+            rewind (arquivo);
+
+            op = 2;
+
+            for(int i = 0; i < nParticipantes; i++){
+                if(socketEmissor[i] != 0){
+                    send(socketEmissor[i], &op, sizeof(op), 0);
+                };
+            }
+
+            strcpy(infoArquivo.nomeArq, nomeArquivo);
+            strcpy(infoArquivo.numRemetente, info.meuNumero);
+            infoArquivo.tamanho = tam;
+
+            for(int i = 0; i < nParticipantes; i++){
+                if (socketEmissor[i] != 0){
+                    send(socketEmissor[i], &infoArquivo, sizeof(infoArquivo), 0);
+                }
+            }
+
+            bloco = malloc(TAM_BLC);
+
+            while(infoArquivo.tamanho > 0 && (bLidos = fread(bloco, 1, TAM_BLC, arquivo)) >= 0){
+                for(int i = 0; i < nParticipantes; i++){
+                    if (socketEmissor[i] != 0){
+                        (send(socketEmissor[i], bloco, bLidos, 0) <= 0);
+                    }
+                }
+                infoArquivo.tamanho -= bLidos;  
+            }
+            
+            fclose(arquivo);
+            free(bloco);
+
+            envioValido = 1;
         }
         else if(strcmp(chamada, "/abrir") == 0){
 
+            nomeArquivo = strtok(NULL, "");
+            if((arquivo = fopen(nomeArquivo,"rb")) <= 0){
+                strcpy(meuTexto, "O arquivo nao existe.\n");
+                print(meuTexto);
+            }
+            else{
+                system("xdg-open RCA-Projeto2.pdf 2>/dev/null");
+                strcpy(meuTexto, "Arquivo aberto.\n");
+                print(meuTexto);
+            }
         }
         else if(strcmp(chamada, "/sair") == 0){
             strcpy(chatAtual, "");
@@ -542,62 +642,82 @@ void acessaConversa(char nomeConversa[], Contato *participantes, int tipoConvers
             strcat(meuTexto, minhaMensagem);
             print(meuTexto);
             op = 1;
-
+            
             for(int i = 0; i < nParticipantes; i++){
-                if((tam = send(socketEmissor[i], &op, sizeof(op), 0)) <= 0){
-
+                if(socketEmissor[i] != 0){
+                    send(socketEmissor[i], &op, sizeof(op), 0);
                 };
             }
 
             bzero(&aenviar,sizeof(aenviar));
-            strcpy(aenviar.chat, chatAtual);
             strcpy(aenviar.msg,minhaMensagem);
             strcpy(aenviar.numRemetente,info.meuNumero);
+
+            envioValido = 1;
         }
 
-        for(int i = 0; i < nParticipantes; i++){
-            if((tam = send(socketEmissor[i], &aenviar, sizeof(aenviar), 0)) <= 0){
-                
+        if(envioValido){
+            for(int i = 0; i < nParticipantes; i++){
+                if(socketEmissor[i] != 0){
+                    bLidos = send(socketEmissor[i], &aenviar, sizeof(aenviar), 0);
+                    printf("TAM: %d MEN: %s\n", bLidos, aenviar.msg);
+                }
             }
+            envioValido = 0;
         }
     }
 
-    fechaConexoes();
+    if(usuarioOnline == 0){
+        printf("O(s) usuario(s) dessa conversa esta(o) offline.\n");
+        printf("\nPressione Enter para continuar...");
+        __fpurge(stdin);
+        getchar();
+    }
+    else{
+        fechaConexoes();
+    }
+
     nParticipantes = 1;
 }
 
-void acessaGrupo(Grupo *grupo, Contato *participantes){
+void acessaGrupo(Grupo *grupo, Contato *listaDeContatos){
 
     int op;
 
+    system("clear");
+
     do{
-        system("clear");
         printf("-- %s --\n\n", grupo->nome);
         printf("[1] Adicionar contato ao grupo\n");
         printf("[2] Acessar conversa\n");
         printf("[3] Participantes\n");
         printf("[4] Voltar\n");
         printf("\n>> ");
+        __fpurge(stdin);
         scanf("%d", &op);
 
         switch(op){
         
             case 1:
                 system("clear");
-                if(adicionaAoGrupo(&(grupo->participantes) , participantes)){
-                    __fpurge(stdin);
-                    printf("\nContato adicionado com sucesso! Pressione Enter para continuar...");
-                    getchar();
+                if(adicionaAoGrupo(&(grupo->participantes) , listaDeContatos)){
+                    printf("\nParticipante adicionado com sucesso! Pressione Enter para continuar...");       
                 }
+                else{
+                    printf("\nEste contato já está no grupo! Pressione Enter para continuar...");
+                }
+                __fpurge(stdin);
+                getchar();
                 break;
 
             case 2:
+                system("clear");
                 acessaConversa(grupo->nome,grupo->participantes, 2);
                 break;
 
             case 3:
                 system("clear");
-                printf("-- PARTICIPANTES --\n");
+                printf("-- PARTICIPANTES --\n\n");
                 exibeContatos(grupo->participantes, 2);
                 __fpurge(stdin);
                 printf("\nPressione Enter para continuar...");
@@ -605,31 +725,37 @@ void acessaGrupo(Grupo *grupo, Contato *participantes){
                 break;
         }
 
+        system("clear");
     }while(op != 4);
 }
 
 int adicionaAoGrupo(Contato **participantes, Contato *listaDeContatos){
 
     long op;
-    Contato *aux, *novoParticipante = NULL;
+    Contato *contatoEscolhido = NULL, *novoParticipante = NULL;
 
-    if((aux = listaContatos(listaDeContatos))){
-        while(*participantes != NULL && aux != NULL && strcmp((*participantes)->nome, aux->nome) < 0){
-            participantes = &(*participantes)->prox;
+    if((contatoEscolhido = listaContatos(listaDeContatos))){
+        if(procuraDuplicata(*participantes, contatoEscolhido->numero)){
+            while(*participantes != NULL && contatoEscolhido != NULL && strcmp((*participantes)->nome, contatoEscolhido->nome) < 0){
+                participantes = &(*participantes)->prox;
+            }
+        }
+        else{
+            return 0;
         }
     }
 
-    if(aux != NULL){
+    if(contatoEscolhido != NULL){
         novoParticipante = (Contato*)malloc(sizeof(Contato));
-        strcpy(novoParticipante->nome, aux->nome);
-        strcpy(novoParticipante->numero, aux->numero);
+        strcpy(novoParticipante->nome, contatoEscolhido->nome);
+        strcpy(novoParticipante->numero, contatoEscolhido->numero);
         novoParticipante->prox = *participantes;
 
         *participantes = novoParticipante;
         return 1;
     }
 
-    return 0;
+    return -1;
 }
 
 Contato *buscaContato(Contato *contato, int indice){
@@ -705,7 +831,6 @@ int contaNaoVizualizadas(MsgNVizualiada *listaMsgs){
 
     int cont = 0;
     while(listaMsgs != NULL){
-        fprintf(stderr,"CONT %d\n",cont);
         listaMsgs = listaMsgs->prox;
         cont++;
     }
@@ -830,20 +955,91 @@ void *esperaUsuarios(){
     }
 }
 
-void fechaConexoes(){
-    
-    for(int i = 0; i < nParticipantes; i++){
-        if(socketEmissor != NULL){
-            close(socketEmissor[i]);
-            free(socketEmissor);
+void gravaArquivo(char nome[], char numero[]){
 
-            socketEmissor + sizeof(int);
+    char caminho[128];
+    FILE *arquivo;
+    ContatoAgenda contato;
+
+    strcpy(contato.nome, nome);
+    strcpy(contato.numero, numero);
+
+    sprintf(caminho,"%s %s/", PASTA, info.meuNumero);
+    mkdir(caminho, S_IRWXU | S_IRWXG | S_IRWXO);
+    strcat(caminho, "Agenda");
+    arquivo = fopen(caminho,"ab");
+
+    if(arquivo){
+        fwrite(&contato, 1, sizeof(ContatoAgenda), arquivo);
+        fclose(arquivo);
+    }
+}
+
+void leArquivo(){
+
+    char caminho[128];
+    FILE *arquivo;
+    ContatoAgenda contato;
+    int bLidos = 0;
+    int tamArquivo = 0;;
+
+    sprintf(caminho,"%s %s/", PASTA, info.meuNumero);
+    strcat(caminho, "Agenda");
+    arquivo = fopen(caminho,"rb");
+
+    if(arquivo){
+
+        fseek (arquivo , 0 , SEEK_END);
+        tamArquivo = ftell(arquivo);
+        rewind (arquivo);
+
+        while(tamArquivo > 0 && (bLidos = fread(&contato, 1, sizeof(ContatoAgenda), arquivo)) >= 0){
+            adicionaNaLista(&contatos, contato.nome, contato.numero);
+            tamArquivo -= bLidos;
         }
+
+        fclose(arquivo);
+    }
+}
+
+void fechaConexoes(){
+
+    if(socketEmissor != NULL){
+        for(int i = 0; i < nParticipantes; i++){
+            if(socketEmissor[i] != 0){
+                close(socketEmissor[i]);
+            }
+        }
+
+        free(socketEmissor);
+        socketEmissor = NULL;
     }
 }
 
 void encerraCliente(){
     system("clear");
     fechaConexoes();
+    close(socketReceptor);
+    ficarOffline();
     exit(0);
+}
+
+void ficarOffline(){
+
+    int s, opServidor = 2;
+
+    s = criarSocketServidor(nomeServidor, portaServidor);
+    if(connect(s, (struct sockaddr *)&server, sizeof(server)) < 0){
+        perror("connect()");
+    };
+
+    if (send(s, &opServidor, sizeof(opServidor), 0) <= 0){
+        perror("send()");
+    }
+
+    if (send(s, info.meuNumero, sizeof(info.meuNumero), 0) <= 0){
+        perror("send()");
+    }
+
+    close(s);
 }

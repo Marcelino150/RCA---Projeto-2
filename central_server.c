@@ -32,7 +32,6 @@ struct infoUsuario{
 
 struct usuario{
     char numero[20];
-    int status;
     InfoRede rede;
 
     Usuario *prox;
@@ -117,28 +116,40 @@ void main(int argc, char **argv){
 
 void loginDeUsuario(char numero[], char ip[], int porta, Usuario **usuarios){
 
+    int novoUsuario = 1;
+
     while(*usuarios != NULL){
+
+        if(strcmp((*usuarios)->numero, numero) == 0){
+            (*usuarios)->rede.porta = porta;
+            strcpy((*usuarios)->rede.ip, ip); 
+            novoUsuario = 0;
+            break;
+        }
+
         usuarios = &(*usuarios)->prox;
     }
 
-    Usuario *aux;
-    aux = (Usuario*)malloc(sizeof(Usuario));
-    strcpy(aux->numero, numero);
-    strcpy(aux->rede.ip, ip);
-    aux->rede.porta = porta;
-    aux->status = 1;
-    aux->prox = NULL;
+    if(novoUsuario){
+        Usuario *aux;
+        aux = (Usuario*)malloc(sizeof(Usuario));
+        strcpy(aux->numero, numero);
+        strcpy(aux->rede.ip, ip);
+        aux->rede.porta = porta;
+        aux->prox = NULL;
 
-    *usuarios = aux;
+        *usuarios = aux;
+    }
 }
 
 void saidaDeUsuario(char numero[], Usuario *usuarios){
 
     while(usuarios != NULL){
 
-        if(strcmp(usuarios->numero, numero)){
-            usuarios->status = 0;
-            return;
+        if(strcmp(usuarios->numero, numero) == 0){
+            usuarios->rede.porta = 0;
+            strcpy(usuarios->rede.ip, "");   
+            break;
         }
 
         usuarios = usuarios->prox;
@@ -149,7 +160,7 @@ InfoRede requisitaUsuario(char numero[], Usuario *usuarios){
 
     while(usuarios != NULL){
 
-        if(strcmp(usuarios->numero, numero) == 0 && usuarios->status == 1){
+        if(strcmp(usuarios->numero, numero) == 0){
             return usuarios->rede;
         }
 
