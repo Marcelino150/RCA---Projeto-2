@@ -17,7 +17,7 @@
 #include <pthread.h>
 
 #define TAM_BLC 65536
-#define PASTA "Armazenamento de"
+#define PASTA "Armazenamento_de"
 #define h_addr h_addr_list[0]
 
 typedef struct contato Contato;
@@ -121,7 +121,6 @@ char portaServidor[20];
 char chatAtual[20] = "";
 int namelen;
 int *socketEmissor;
-int socketReceptor;
 int nParticipantes = 1;
 
 int main(int argc, char **argv){
@@ -397,7 +396,7 @@ void print(char msg[]){
 
 void *threadReceptora(void *parametros){
 
-    char caminho[128], paraExibir[256], caminhoArquivo[256];
+    char caminho[100], paraExibir[256];
     int bRecebidos = 0, op;
     FILE *arquivo;
     InfoArq infoArquivo;
@@ -405,17 +404,16 @@ void *threadReceptora(void *parametros){
     void *bloco;
     Contato *remetente;
     struct sockaddr_in client = ((Parametro*)parametros)-> cliente;
-    socketReceptor = ((Parametro*)parametros)-> socketReceptor;    
-
-    sprintf(caminho,"%s %s/", PASTA, info.meuNumero);
+    int socketReceptor = ((Parametro*)parametros)-> socketReceptor; 
+    int tam;   
 
     do{
         bzero(&op, sizeof(op));
-        recv(socketReceptor, &op, sizeof(op), 0);
+        tam = recv(socketReceptor, &op, sizeof(op), 0);
         
         if(op == 1){
             bzero(&recebido, sizeof(recebido));
-            recv(socketReceptor, &recebido, sizeof(recebido), 0);
+            tam = recv(socketReceptor, &recebido, sizeof(recebido), 0);
 
             fflush(stdout);
             remetente = buscaContatoPorNumero(contatos, recebido.numRemetente);
@@ -428,7 +426,8 @@ void *threadReceptora(void *parametros){
             }
         }
         else if(op == 2){
-
+            
+            sprintf(caminho,"%s_%s/", PASTA, info.meuNumero);
             recv(socketReceptor, &infoArquivo, sizeof(infoArquivo), 0);
 
             mkdir(caminho, S_IRWXU | S_IRWXG | S_IRWXO);
@@ -456,8 +455,9 @@ void *threadReceptora(void *parametros){
             }
         }
 
-    }while(1);
+    }while(op != 0);
 
+    close(socketReceptor);
     pthread_exit(NULL);
 }
 
@@ -507,6 +507,7 @@ void acessaConversa(char nomeConversa[], Contato *participantes, int tipoConvers
     char minhaMensagem[100];
     char chamada[100];
     char *nomeArquivo;
+    char caminho[100];
     char meuTexto[100];
     Mensagem aenviar;
     FILE *arquivo;
@@ -516,7 +517,7 @@ void acessaConversa(char nomeConversa[], Contato *participantes, int tipoConvers
     int tam, flag = 0;
     int envioValido = 0;
     int usuarioOnline = 0;
-
+    char comando[128];
     void *bloco;
     int bLidos;
 
@@ -576,61 +577,86 @@ void acessaConversa(char nomeConversa[], Contato *participantes, int tipoConvers
         strcpy(chamada, minhaMensagem);
         strtok(chamada, " ");
         
+        sprintf(caminho,"%s_%s/", PASTA, info.meuNumero);
+
         if(strcmp(chamada, "/enviar") == 0){
 
-            nomeArquivo = strtok(NULL, ""); 
-            if((arquivo = fopen(nomeArquivo,"rb")) <= 0){
-            
+            nomeArquivo = strtok(NULL, "");
+
+            if(!nomeArquivo){
+                strcpy(meuTexto, "Nome do arquivo nao especificado.");
+                print(meuTexto);
             }
-            fseek (arquivo, 0 , SEEK_END);
-            tam = ftell(arquivo);
-            rewind (arquivo);
-
-            op = 2;
-
-            for(int i = 0; i < nParticipantes; i++){
-                if(socketEmissor[i] != 0){
-                    send(socketEmissor[i], &op, sizeof(op), 0);
-                };
-            }
-
-            strcpy(infoArquivo.nomeArq, nomeArquivo);
-            strcpy(infoArquivo.numRemetente, info.meuNumero);
-            infoArquivo.tamanho = tam;
-
-            for(int i = 0; i < nParticipantes; i++){
-                if (socketEmissor[i] != 0){
-                    send(socketEmissor[i], &infoArquivo, sizeof(infoArquivo), 0);
+            else{
+                strcat(caminho, nomeArquivo);
+                if((arquivo = fopen(caminho,"rb")) <= 0){
+                    sprintf(meuTexto,"O arquivo [%s] nao existe.", nomeArquivo);
+                    print(meuTexto);
                 }
-            }
+                else{
+                    fseek (arquivo, 0 , SEEK_END);
+                    tam = ftell(arquivo);
+                    rewind (arquivo);
 
-            bloco = malloc(TAM_BLC);
+                    op = 2;
 
-            while(infoArquivo.tamanho > 0 && (bLidos = fread(bloco, 1, TAM_BLC, arquivo)) >= 0){
-                for(int i = 0; i < nParticipantes; i++){
-                    if (socketEmissor[i] != 0){
-                        (send(socketEmissor[i], bloco, bLidos, 0) <= 0);
+                    for(int i = 0; i < nParticipantes; i++){
+                        if(socketEmissor[i] != 0){
+                            send(socketEmissor[i], &op, sizeof(op), 0);
+                        };
                     }
-                }
-                infoArquivo.tamanho -= bLidos;  
-            }
-            
-            fclose(arquivo);
-            free(bloco);
 
-            envioValido = 1;
+                    strcpy(infoArquivo.nomeArq, nomeArquivo);
+                    strcpy(infoArquivo.numRemetente, info.meuNumero);
+                    infoArquivo.tamanho = tam;
+
+                    for(int i = 0; i < nParticipantes; i++){
+                        if (socketEmissor[i] != 0){
+                            send(socketEmissor[i], &infoArquivo, sizeof(infoArquivo), 0);
+                        }
+                    }
+
+                    bloco = malloc(TAM_BLC);
+
+                    while(infoArquivo.tamanho > 0 && (bLidos = fread(bloco, 1, TAM_BLC, arquivo)) >= 0){
+                        for(int i = 0; i < nParticipantes; i++){
+                            if (socketEmissor[i] != 0){
+                                (send(socketEmissor[i], bloco, bLidos, 0) <= 0);
+                            }
+                        }
+                        infoArquivo.tamanho -= bLidos;  
+                    }
+                    
+                    fclose(arquivo);
+                    free(bloco);
+
+                    envioValido = 1;
+
+                    sprintf(meuTexto,"Arquivo [%s] enviado.", nomeArquivo);
+                    print(meuTexto);
+                }
+            }
         }
         else if(strcmp(chamada, "/abrir") == 0){
 
             nomeArquivo = strtok(NULL, "");
-            if((arquivo = fopen(nomeArquivo,"rb")) <= 0){
-                strcpy(meuTexto, "O arquivo nao existe.\n");
-                print(meuTexto);
+
+            if(!nomeArquivo){
+                strcpy(meuTexto, "Nome do arquivo nao especificado.");
             }
             else{
-                system("xdg-open RCA-Projeto2.pdf 2>/dev/null");
-                strcpy(meuTexto, "Arquivo aberto.\n");
-                print(meuTexto);
+                strcat(caminho, nomeArquivo);
+                if((arquivo = fopen(caminho,"rb")) <= 0){
+                    sprintf(meuTexto,"O arquivo [%s] nao existe.", nomeArquivo);
+                    print(meuTexto);
+                }
+                else{
+                    sprintf(comando, "xdg-open %s 2>/dev/null", caminho);
+                    system(comando);
+                    sprintf(meuTexto,"Abrindo arquivo [%s]...", nomeArquivo);
+                    print(meuTexto);
+                    fclose(arquivo);
+                }
             }
         }
         else if(strcmp(chamada, "/sair") == 0){
@@ -645,13 +671,13 @@ void acessaConversa(char nomeConversa[], Contato *participantes, int tipoConvers
             
             for(int i = 0; i < nParticipantes; i++){
                 if(socketEmissor[i] != 0){
-                    send(socketEmissor[i], &op, sizeof(op), 0);
+                    bLidos = send(socketEmissor[i], &op, sizeof(op), 0);
                 };
             }
 
             bzero(&aenviar,sizeof(aenviar));
-            strcpy(aenviar.msg,minhaMensagem);
-            strcpy(aenviar.numRemetente,info.meuNumero);
+            strcpy(aenviar.msg, minhaMensagem);
+            strcpy(aenviar.numRemetente, info.meuNumero);
 
             envioValido = 1;
         }
@@ -660,7 +686,6 @@ void acessaConversa(char nomeConversa[], Contato *participantes, int tipoConvers
             for(int i = 0; i < nParticipantes; i++){
                 if(socketEmissor[i] != 0){
                     bLidos = send(socketEmissor[i], &aenviar, sizeof(aenviar), 0);
-                    printf("TAM: %d MEN: %s\n", bLidos, aenviar.msg);
                 }
             }
             envioValido = 0;
@@ -946,6 +971,7 @@ void *esperaUsuarios(){
         parametros.cliente = client;
 
         td = pthread_create(&thread, NULL, &threadReceptora, (void*)&parametros);
+
         if (td) {
             printf("ERRO: impossivel criar thread.\n");
             exit(0);
@@ -957,14 +983,14 @@ void *esperaUsuarios(){
 
 void gravaArquivo(char nome[], char numero[]){
 
-    char caminho[128];
+    char caminho[100];
     FILE *arquivo;
     ContatoAgenda contato;
 
     strcpy(contato.nome, nome);
     strcpy(contato.numero, numero);
 
-    sprintf(caminho,"%s %s/", PASTA, info.meuNumero);
+    sprintf(caminho,"%s_%s/", PASTA, info.meuNumero);
     mkdir(caminho, S_IRWXU | S_IRWXG | S_IRWXO);
     strcat(caminho, "Agenda");
     arquivo = fopen(caminho,"ab");
@@ -977,13 +1003,13 @@ void gravaArquivo(char nome[], char numero[]){
 
 void leArquivo(){
 
-    char caminho[128];
+    char caminho[100];
     FILE *arquivo;
     ContatoAgenda contato;
     int bLidos = 0;
     int tamArquivo = 0;;
 
-    sprintf(caminho,"%s %s/", PASTA, info.meuNumero);
+    sprintf(caminho,"%s_%s/", PASTA, info.meuNumero);
     strcat(caminho, "Agenda");
     arquivo = fopen(caminho,"rb");
 
@@ -1019,7 +1045,6 @@ void fechaConexoes(){
 void encerraCliente(){
     system("clear");
     fechaConexoes();
-    close(socketReceptor);
     ficarOffline();
     exit(0);
 }
